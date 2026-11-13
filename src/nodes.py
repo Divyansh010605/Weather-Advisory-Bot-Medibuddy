@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
+import random
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -39,14 +40,28 @@ class ExtractedSlots(BaseModel):
         description="Time period of interest (e.g. 'today', 'this evening', 'tomorrow', 'now', 'tonight') or null.",
     )
 
+class GeminiUnavailableError(Exception):
+    pass
+
+
+class GeminiConfigurationError(Exception):
+    pass
+
+
+class GeminiResponseError(Exception):
+    pass
+
 
 def extract_with_gemini(
-    message: str, history: List[Dict[str, str]]) -> Dict[str, Optional[str]]:
+    message: str,
+    history: List[Dict[str, str]]
+) -> Dict[str, Optional[str]]:
+
     api_key = os.getenv("GEMINI_API_KEY")
+
     if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY environment variable is mandatory for language-model intent parsing. "
-            "Please configure GEMINI_API_KEY in your .env file or environment."
+        raise GeminiConfigurationError(
+            "Gemini API key is not configured."
         )
 
     from google import genai
@@ -56,23 +71,27 @@ def extract_with_gemini(
     client = genai.Client(api_key=api_key)
 
     history_summary = []
+
     for msg in history[-6:]:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         history_summary.append(f"{role.capitalize()}: {content}")
+
     hist_text = "\n".join(history_summary) if history_summary else "None"
 
     prompt = (
-        "You are an intent and slot extractor for a weather advisory support system.\n"
-        "Extract the following three parameters from the user's current message and conversational history:\n"
-        "1. activity: The outdoor activity being asked about (e.g., cycling, picnic, construction, running, walking, drone flying, skydiving). "
-        "Resolve colloquial phrases (such as 'peddle on two wheels' -> 'cycling', 'dining al fresco' or 'laying down a blanket' -> 'picnic').\n"
-        "2. location: The targeted city or location name (e.g., Bhopal, London, Miami, Sydney, Tokyo). "
-        "If the user message is a follow-up inquiry (such as 'What about this evening?'), carry forward the prior location from conversation history unless changed.\n"
-        "3. time_target: Timeframe of interest (e.g., 'today', 'this evening', 'tomorrow', 'now'). Default to 'today' if not specified.\n\n"
+        "You are an intent and slot extractor for a weather advisory system.\n"
+        "Extract activity, location and time_target.\n"
+        "Resolve colloquial activity descriptions.\n"
+        "Carry forward the previous location for follow-up questions "
+        "unless the user changes it.\n"
+        "Default time_target to today if unspecified.\n"
+        "Return only the requested structured fields.\n\n"
         f"Conversation History:\n{hist_text}\n\n"
         f"Current User Message: {message}"
     )
+
+    last_error = None
 
     for attempt in range(3):
         try:
@@ -87,6 +106,12 @@ def extract_with_gemini(
             )
 
             raw_text = (response.text or "").strip()
+
+            if not raw_text:
+                raise GeminiResponseError(
+                    "Gemini returned an empty response."
+                )
+
             data = json.loads(raw_text)
 
             return {
@@ -94,26 +119,89 @@ def extract_with_gemini(
                 "location": data.get("location"),
                 "time_target": data.get("time_target") or "today",
             }
-        except Exception as exc:
-            err_str = str(exc)
-            if ("503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str) and attempt < 2:
-                time.sleep(3.0 * (attempt + 1))
-                continue
+
+        except GeminiResponseError:
             raise
+
+        except Exception as exc:
+            last_error = exc
+            err_str = str(exc).upper()
+
+            retryable = any(
+                marker in err_str
+                for marker in (
+                    "503",
+                    "UNAVAILABLE",
+                    "429",
+                    "RESOURCE_EXHAUSTED",
+                    "500",
+                    "502",
+                    "504",
+                    "INTERNAL",
+                )
+            )
+
+            if not retryable:
+                raise GeminiResponseError(
+                    "Gemini request failed. Check model availability "
+                    "and API configuration."
+                ) from exc
+
+            if attempt < 2:
+                delay = (2 ** (attempt + 1)) + random.uniform(0, 1)
+                time.sleep(delay)
+
+    raise GeminiUnavailableError(
+        "Gemini is temporarily experiencing high demand. "
+        "Please try again in a few moments."
+    ) from last_error
 
 
 def parse_request_node(state: WeatherBotState) -> Dict[str, Any]:
     user_msg = state.get("user_message", "")
     history = state.get("history", [])
 
-    extracted = extract_with_gemini(user_msg, history)
+    try:
+        extracted = extract_with_gemini(user_msg, history)
 
+        return {
+            "extracted_activity": extracted.get("activity"),
+            "extracted_location": extracted.get("location"),
+            "extracted_time": extracted.get("time_target") or "today",
+            "parse_error": None,
+        }
+
+    except GeminiUnavailableError as exc:
+        return {
+            "parse_error": str(exc),
+        }
+
+    except GeminiConfigurationError:
+        return {
+            "parse_error": (
+                "The AI service is not configured correctly. "
+                "Please contact the administrator."
+            ),
+        }
+
+    except GeminiResponseError:
+        return {
+            "parse_error": (
+                "The AI service could not understand the request. "
+                "Please try rephrasing your question."
+            ),
+        }
+
+def parse_failure_node(state: WeatherBotState) -> Dict[str, Any]:
     return {
-        "extracted_activity": extracted.get("activity"),
-        "extracted_location": extracted.get("location"),
-        "extracted_time": extracted.get("time_target") or "today",
+        "outcome": "llm_failure",
+        "final_response": state.get(
+            "parse_error",
+            "The AI service is temporarily unavailable. Please try again."
+        ),
+        "sop_citation": None,
+        "relevant_weather": None,
     }
-
 
 def resolve_location_node(state: WeatherBotState) -> Dict[str, Any]:
     query = state.get("extracted_location")

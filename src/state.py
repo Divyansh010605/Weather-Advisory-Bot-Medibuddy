@@ -13,6 +13,7 @@ class WeatherBotState(TypedDict, total=False):
     extracted_activity: Optional[str]
     extracted_location: Optional[str]
     extracted_time: Optional[str]
+    parse_error: Optional[str]
 
     # Geocoding result
     resolved_location: Optional[Dict[str, Any]]
