@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Advisory Support Bot</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="chat-wrapper">
+    <header class="chat-header">
+      <div class="header-content">
+        <div class="status-indicator"></div>
+        <div>
+          <h1>Weather Advisory Bot</h1>
+          <p class="subtitle">Policy-grounded outdoor activity safety decisions</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="session-badge" id="sessionBadge" title="Session ID">Session: ...</span>
+        <button id="resetBtn" class="secondary-btn" title="Clear conversation context">New Session</button>
+      </div>
+    </header>
+
+    <div class="sops-banner">
+      <span>12 Active SOPs: Commuting &bull; Sports & Recreation &bull; Outdoor Work</span>
+    </div>
+
+    <main class="chat-messages" id="messagesContainer">
+      <div class="message bot-message intro-message">
+        <div class="message-content">
+          <p><strong>Welcome to the Weather Advisory Bot!</strong></p>
+          <p>Ask whether an outdoor activity is safe based on live weather data and verified Standard Operating Procedures (SOPs).</p>
+          <div class="quick-prompts">
+            <button class="chip" onclick="usePrompt('Is it okay to cycle to work in Bhopal today?')">🚴 Cycle in Bhopal</button>
+            <button class="chip" onclick="usePrompt('Can we have an outdoor picnic in London today?')">🧺 Picnic in London</button>
+            <button class="chip" onclick="usePrompt('Is it safe for crane and scaffolding construction in Tokyo?')">🏗️ Construction in Tokyo</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div id="errorBanner" class="error-banner hidden"></div>
+
+    <footer class="chat-input-area">
+      <form id="chatForm" class="input-form">
+        <textarea
+          id="messageInput"
+          placeholder="Ask an outdoor activity question (e.g. 'Is it okay to cycle in Bhopal today?')..."
+          rows="1"
+          required
+        ></textarea>
+        <button type="submit" id="sendBtn" class="primary-btn">
+          <span>Send</span>
+          <svg class="send-icon" viewBox="0 0 24 24" width="18" height="18">
+            <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      </form>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
