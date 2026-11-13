@@ -177,6 +177,7 @@ def extract_with_gemini(
     ) from last_error
 
 
+
 def extract_with_groq(
     message: str,
     history: List[Dict[str, str]]
@@ -185,6 +186,7 @@ def extract_with_groq(
     api_key = os.getenv("GROQ_API_KEY")
 
     if not api_key:
+        logger.error("Groq API key is not configured.")
         raise LLMUnavailableError("Groq API key is not configured.")
 
     from groq import Groq
@@ -205,57 +207,105 @@ def extract_with_groq(
     for msg in history[-6:]:
         role = msg.get("role", "user")
         content = msg.get("content", "")
-        history_summary.append(f"{role.capitalize()}: {content}")
 
-    hist_text = "\n".join(history_summary) if history_summary else "None"
+        if content:
+            history_summary.append(
+                f"{role.capitalize()}: {content}"
+            )
 
-    prompt = (
-        "You are an intent and slot extractor for a weather advisory system.\n"
-        "Extract exactly three fields: activity, location, time_target.\n"
-        "Resolve colloquial descriptions into canonical outdoor activities.\n"
-        "For follow-up messages, carry forward the previous activity and "
-        "location when the user has not changed them.\n"
+    hist_text = (
+        "\n".join(history_summary)
+        if history_summary
+        else "None"
+    )
+
+    system_prompt = (
+        "You are an intent and slot extractor for a weather "
+        "advisory system.\n"
+        "Extract exactly three fields: activity, location, "
+        "time_target.\n"
+        "Resolve colloquial descriptions into canonical "
+        "outdoor activities.\n"
+        "For follow-up messages, carry forward the previous "
+        "activity and location when the user has not changed them.\n"
         "Use null when a field cannot be determined.\n"
-        "Use today as the default time_target if no timeframe is specified.\n\n"
-        "Return a JSON object with exactly these keys:\n"
-        '{"activity": null, "location": null, "time_target": "today"}\n\n'
+        "Use today as the default time_target if no timeframe "
+        "is specified.\n"
+        "Do not invent locations or activities.\n"
+        "Return only a valid JSON object with exactly these keys:\n"
+        '{"activity": null, "location": null, "time_target": "today"}'
+    )
+
+    user_prompt = (
         f"Conversation History:\n{hist_text}\n\n"
         f"Current User Message: {message}"
     )
-    logger.info("Groq request started")
 
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Extract weather activity intent. "
-                    "Return only valid JSON with activity, location "
-                    "and time_target keys."
-                ),
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
-        max_tokens=250,
+    logger.info(
+        "Groq request started | model=%s | history_messages=%d",
+        model_name,
+        len(history_summary),
     )
-    logger.info("Groq response received")
-    raw_text = response.choices[0].message.content or "{}"
-    logger.info("Groq response parsed")
-    data = json.loads(raw_text)
 
-    slots = ExtractedSlots.model_validate({
-        "activity": data.get("activity"),
-        "location": data.get("location"),
-        "time_target": data.get("time_target") or "today",
-    })
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=250,
+        )
 
-    return slots.model_dump()
+        logger.info("Groq response received")
+
+        if not response.choices:
+            raise ValueError("Groq returned no response choices.")
+
+        raw_text = response.choices[0].message.content
+
+        if not raw_text:
+            raise ValueError("Groq returned an empty response.")
+
+        logger.info("Groq response content received")
+
+        data = json.loads(raw_text)
+
+        if not isinstance(data, dict):
+            raise ValueError("Groq response must be a JSON object.")
+
+        slots = ExtractedSlots.model_validate({
+            "activity": data.get("activity"),
+            "location": data.get("location"),
+            "time_target": data.get("time_target") or "today",
+        })
+
+        result = slots.model_dump()
+
+        logger.info(
+            "Groq intent extraction successful | activity=%s | location=%s | time_target=%s",
+            result.get("activity"),
+            result.get("location"),
+            result.get("time_target"),
+        )
+
+        return result
+
+    except Exception:
+        logger.exception(
+            "Groq intent extraction failed | model=%s",
+            model_name,
+        )
+        raise
+
 
 
 def parse_request_node(state: WeatherBotState) -> Dict[str, Any]:
