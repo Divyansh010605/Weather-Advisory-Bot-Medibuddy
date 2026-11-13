@@ -19,6 +19,9 @@ load_dotenv()
 
 from src.graph import graph_app
 from src.policy_matcher import get_cached_sops
+import logging
+
+logger = logging.getLogger(__name__)
 
 SESSION_MEMORY: Dict[str, List[Dict[str, str]]] = {}
 
@@ -50,6 +53,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    outcome: Optional[str] = None
     sop_citation: Optional[Dict[str, Any]] = None
     relevant_weather: Optional[Dict[str, Any]] = None
     session_id: str
@@ -96,9 +100,12 @@ def chat_endpoint(request: ChatRequest):
 
     try:
         final_state = graph_app.invoke(initial_state)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Graph execution failed: {str(exc)}")
-
+    except Exception:
+        logger.exception("Unexpected graph execution failure")
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred. Please try again."
+        )
     bot_answer = final_state.get("final_response", "No response generated.")
     sop_citation = final_state.get("sop_citation")
     relevant_weather = final_state.get("relevant_weather")
@@ -108,11 +115,12 @@ def chat_endpoint(request: ChatRequest):
     history.append({"role": "assistant", "content": bot_answer})
 
     return ChatResponse(
-        answer=bot_answer,
-        sop_citation=sop_citation,
-        relevant_weather=relevant_weather,
-        session_id=session_id,
-    )
+    answer=bot_answer,
+    outcome=final_state.get("outcome"),
+    sop_citation=sop_citation,
+    relevant_weather=relevant_weather,
+    session_id=session_id,
+)
 
 
 if __name__ == "__main__":
