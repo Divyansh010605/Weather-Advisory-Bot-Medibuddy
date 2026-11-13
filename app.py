@@ -1,4 +1,4 @@
-"""FastAPI application entrypoint for Weather Advisory Support Bot."""
+# FastAPI application entrypoint for Weather Advisory Support Bot
 
 import os
 from pathlib import Path
@@ -20,8 +20,6 @@ load_dotenv()
 from src.graph import graph_app
 from src.policy_matcher import get_cached_sops
 
-# In-memory session store: maps session_id -> list of message dicts
-# Note: Session memory is held in-process and resets whenever the server restarts.
 SESSION_MEMORY: Dict[str, List[Dict[str, str]]] = {}
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -59,7 +57,6 @@ class ChatResponse(BaseModel):
 
 @app.get("/", response_class=FileResponse)
 def serve_index():
-    """Serve the chat web interface."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="index.html not found")
@@ -68,20 +65,17 @@ def serve_index():
 
 @app.get("/health")
 def health_check():
-    """Health check endpoint."""
     return {"status": "healthy", "service": "weather-advisory-bot"}
 
 
 @app.get("/api/sops")
 def list_sops():
-    """Inspect all active Standard Operating Procedures (SOPs)."""
     sops = get_cached_sops()
     return {"total": len(sops), "sops": sops}
 
 
 @app.post("/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
-    """Process user message through LangGraph workflow with in-memory session context."""
     user_msg = (request.message or "").strip()
     if not user_msg:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
