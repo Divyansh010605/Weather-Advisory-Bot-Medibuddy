@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import uuid
+from fastapi import Response
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -66,6 +67,9 @@ def serve_index():
         raise HTTPException(status_code=404, detail="index.html not found")
     return FileResponse(index_path)
 
+@app.head("/")
+def serve_index_head():
+    return Response(status_code=200)
 
 @app.get("/health")
 def health_check():

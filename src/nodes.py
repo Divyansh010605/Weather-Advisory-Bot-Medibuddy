@@ -222,6 +222,7 @@ def extract_with_groq(
         f"Conversation History:\n{hist_text}\n\n"
         f"Current User Message: {message}"
     )
+    logger.info("Groq request started")
 
     response = client.chat.completions.create(
         model=model_name,
@@ -243,8 +244,9 @@ def extract_with_groq(
         temperature=0,
         max_tokens=250,
     )
-
+    logger.info("Groq response received")
     raw_text = response.choices[0].message.content or "{}"
+    logger.info("Groq response parsed")
     data = json.loads(raw_text)
 
     slots = ExtractedSlots.model_validate({
