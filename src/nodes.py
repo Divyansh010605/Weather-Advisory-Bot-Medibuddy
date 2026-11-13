@@ -365,11 +365,11 @@ def extract_with_fallback(
 
     if groq_key:
         try:
-            logger.info("Attempting intent extraction with Groq")
+            logger.info("DEBUG: Entering extract_with_groq()")
 
             result = extract_with_groq(message, history)
 
-            logger.info("Groq fallback successful")
+            logger.info("DEBUG: Returned successfully from extract_with_groq()")
             return result
 
         except Exception as exc:
