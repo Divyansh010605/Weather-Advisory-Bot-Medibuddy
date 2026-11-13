@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
-
+from threading import RLock
 
 SEVERITY_WEIGHTS = {
     "Critical": 4,
@@ -13,26 +13,41 @@ SEVERITY_WEIGHTS = {
 }
 
 _SOPS_CACHE: Optional[List[Dict[str, Any]]] = None
+_DEFAULT_SOPS_PATH = Path(__file__).resolve().parent.parent / "policies" / "sops.yaml"
+_SOPS_MTIME: Optional[int] = None
+_SOPS_PATH: Optional[Path] = None
+_CACHE_LOCK = RLock()
 
 
 def load_sops(sops_path: Optional[Path] = None) -> List[Dict[str, Any]]:
-    global _SOPS_CACHE
-    if sops_path is None:
-        # Default relative to this file
-        sops_path = Path(__file__).resolve().parent.parent / "policies" / "sops.yaml"
-
-    with open(sops_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        sops = data.get("sops", [])
+    global _SOPS_CACHE, _SOPS_MTIME, _SOPS_PATH
+    path = Path(sops_path or _DEFAULT_SOPS_PATH).resolve()
+    with _CACHE_LOCK:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+        sops = payload.get("sops")
+        if not isinstance(sops, list):
+            raise ValueError(f"Invalid SOP configuration: 'sops' must be a list in {path}")
+        ids = [item.get("id") for item in sops if isinstance(item, dict)]
+        if len(ids) != len(sops) or any(not value for value in ids) or len(set(ids)) != len(ids):
+            raise ValueError(f"Invalid SOP configuration: every SOP must have a unique non-empty id in {path}")
         _SOPS_CACHE = sops
-        return sops
+        _SOPS_PATH = path
+        _SOPS_MTIME = path.stat().st_mtime_ns
+        return list(_SOPS_CACHE)
 
 
-def get_cached_sops() -> List[Dict[str, Any]]:
-    global _SOPS_CACHE
-    if _SOPS_CACHE is None:
-        return load_sops()
-    return _SOPS_CACHE
+def get_cached_sops(sops_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    global _SOPS_CACHE, _SOPS_MTIME, _SOPS_PATH
+    path = Path(sops_path or _DEFAULT_SOPS_PATH).resolve()
+    with _CACHE_LOCK:
+        try:
+            current_mtime = path.stat().st_mtime_ns
+        except OSError as exc:
+            raise RuntimeError(f"SOP policy file is unavailable: {path}") from exc
+        if _SOPS_CACHE is None or _SOPS_PATH != path or _SOPS_MTIME != current_mtime:
+            return load_sops(path)
+        return list(_SOPS_CACHE)
 
 
 def _matches_activity(user_activity: Optional[str], applicable_activities: List[str]) -> Tuple[bool, bool]:
@@ -50,86 +65,82 @@ def _matches_activity(user_activity: Optional[str], applicable_activities: List[
 
     return False, False
 
+def _required_fields_present(sop: Dict[str, Any], weather: Dict[str, Any]) -> bool:
+    for field in sop.get("required_fields", []):
+        if field not in weather or weather[field] is None:
+            return False
+    return True
+
+def _evaluate_qualitative_conditions(conditions: Dict[str, Any], weather: Dict[str, Any]) -> bool:
+    """Evaluate named qualitative profiles using explicit measurable thresholds."""
+    profiles = conditions.get("qualitative_conditions", [])
+    if isinstance(profiles, dict):
+        profiles = [name for name, enabled in profiles.items() if enabled]
+    if not profiles:
+        return True
+
+    for profile in profiles:
+        if profile == "outdoor_comfortable":
+            required = (
+                "temperature_2m", "precipitation_probability",
+                "wind_speed_10m", "uv_index", "weather_code",
+            )
+            if any(weather.get(field) is None for field in required):
+                return False
+            if not (18 <= weather["temperature_2m"] <= 29):
+                return False
+            if weather["precipitation_probability"] > 30:
+                return False
+            if weather["wind_speed_10m"] > 20:
+                return False
+            if weather["uv_index"] > 6:
+                return False
+            if weather["weather_code"] not in [0, 1, 2, 3]:
+                return False
+        else:
+            # Unknown qualitative rule names fail closed.
+            return False
+    return True
 
 def _evaluate_numeric_conditions(conditions: Dict[str, Any], weather_data: Dict[str, Any]) -> bool:
-    # 1. Temperature checks
-    if "temperature_min" in conditions:
-        temp = weather_data.get("temperature_2m")
-        if temp is None or temp < conditions["temperature_min"]:
+    numeric_fields = {
+        "temperature_min": ("temperature_2m", "min"),
+        "temperature_max": ("temperature_2m", "max"),
+        "apparent_temperature_min": ("apparent_temperature", "min"),
+        "wind_speed_min": ("wind_speed_10m", "min"),
+        "wind_speed_max": ("wind_speed_10m", "max"),
+        "wind_gusts_min": ("wind_gusts_10m", "min"),
+        "precipitation_min": ("precipitation", "min"),
+        "precipitation_max": ("precipitation", "max"),
+        "precipitation_probability_min": ("precipitation_probability", "min"),
+        "precipitation_probability_max": ("precipitation_probability", "max"),
+        "visibility_min": ("visibility", "min"),
+        "visibility_max": ("visibility", "max"),
+        "uv_index_min": ("uv_index", "min"),
+        "uv_index_max": ("uv_index", "max"),
+    }
+    for condition, (field, comparator) in numeric_fields.items():
+        if condition not in conditions:
+            continue
+        actual = weather_data.get(field)
+        if actual is None:
+            return False
+        threshold = conditions[condition]
+        if comparator == "min" and actual < threshold:
+            return False
+        if comparator == "max" and actual > threshold:
             return False
 
-    if "temperature_max" in conditions:
-        temp = weather_data.get("temperature_2m")
-        if temp is None or temp > conditions["temperature_max"]:
-            return False
-
-    # 2. Apparent Temperature checks
-    if "apparent_temperature_min" in conditions:
-        app_temp = weather_data.get("apparent_temperature")
-        if app_temp is None or app_temp < conditions["apparent_temperature_min"]:
-            return False
-
-    # 3. Wind speed checks
-    if "wind_speed_min" in conditions:
-        wind = weather_data.get("wind_speed_10m")
-        if wind is None or wind < conditions["wind_speed_min"]:
-            return False
-
-    if "wind_speed_max" in conditions:
-        wind = weather_data.get("wind_speed_10m")
-        if wind is None or wind > conditions["wind_speed_max"]:
-            return False
-
-    # 4. Wind gusts checks
-    if "wind_gusts_min" in conditions:
-        gusts = weather_data.get("wind_gusts_10m")
-        if gusts is None or gusts < conditions["wind_gusts_min"]:
-            return False
-
-    # 5. Precipitation checks
-    if "precipitation_min" in conditions:
-        precip = weather_data.get("precipitation")
-        if precip is None or precip < conditions["precipitation_min"]:
-            return False
-
-    if "precipitation_max" in conditions:
-        precip = weather_data.get("precipitation")
-        if precip is None or precip > conditions["precipitation_max"]:
-            return False
-
-    # 6. Visibility checks
-    if "visibility_min" in conditions:
-        vis = weather_data.get("visibility")
-        if vis is None or vis < conditions["visibility_min"]:
-            return False
-
-    if "visibility_max" in conditions:
-        vis = weather_data.get("visibility")
-        if vis is None or vis > conditions["visibility_max"]:
-            return False
-
-    # 7. UV Index checks
-    if "uv_index_min" in conditions:
-        uv = weather_data.get("uv_index")
-        if uv is None or uv < conditions["uv_index_min"]:
-            return False
-
-    if "uv_index_max" in conditions:
-        uv = weather_data.get("uv_index")
-        if uv is None or uv > conditions["uv_index_max"]:
-            return False
-
-    # 8. Weather code inclusion / exclusion
-    w_code = weather_data.get("weather_code")
+    code = weather_data.get("weather_code")
     if "weather_code_in" in conditions:
-        if w_code is None or w_code not in conditions["weather_code_in"]:
+        if code is None or code not in conditions["weather_code_in"]:
             return False
-
     if "weather_code_not_in" in conditions:
-        if w_code is not None and w_code in conditions["weather_code_not_in"]:
+        if code is None or code in conditions["weather_code_not_in"]:
             return False
 
-    return True
+    return _evaluate_qualitative_conditions(conditions, weather_data)
+
 
 
 def match_sops(
@@ -146,30 +157,29 @@ def match_sops(
     matched: List[Dict[str, Any]] = []
 
     for sop in sops:
-        applicable = sop.get("applicable_activities", [])
-        is_act_match, is_exact = _matches_activity(user_activity, applicable)
-        if not is_act_match:
+        activities = sop.get("applicable_activities", [])
+        is_activity_match, is_exact = _matches_activity(user_activity, activities)
+        if not is_activity_match:
+            continue
+        if not _required_fields_present(sop, weather_data):
+            continue
+        if not _evaluate_numeric_conditions(sop.get("conditions", {}), weather_data):
             continue
 
-        conditions = sop.get("conditions", {})
-        if _evaluate_numeric_conditions(conditions, weather_data):
-            # Annotate with specificity for tie-breaking
-            sop_entry = dict(sop)
-            sop_entry["_is_exact_activity"] = is_exact
-            sop_entry["_severity_weight"] = SEVERITY_WEIGHTS.get(sop.get("severity", "Normal"), 1)
-            sop_entry["_priority"] = sop.get("priority", 0)
-            matched.append(sop_entry)
+        annotated = dict(sop)
+        annotated["_is_exact_activity"] = is_exact
+        annotated["_severity_weight"] = SEVERITY_WEIGHTS.get(sop.get("severity", "Normal"), 1)
+        annotated["_priority"] = sop.get("priority", 0)
+        matched.append(annotated)
 
     if not matched:
         return None, []
-    # Sort matching SOPs:
-    # 1st key: Severity weight descending (Critical > High > Moderate > Normal)
-    # 2nd key: Activity specificity descending (exact activity over wildcard)
-    # 3rd key: Explicit priority descending
     matched.sort(
-        key=lambda s: (s["_severity_weight"], 1 if s["_is_exact_activity"] else 0, s["_priority"]),
+        key=lambda item: (
+            item["_severity_weight"],
+            1 if item["_is_exact_activity"] else 0,
+            item["_priority"],
+        ),
         reverse=True,
     )
-
-    selected = matched[0]
-    return selected, matched
+    return matched[0], matched

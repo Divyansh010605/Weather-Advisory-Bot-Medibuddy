@@ -25,6 +25,7 @@ def format_weather_summary(weather: Dict[str, Any]) -> str:
     lines.append(f"- **Temperature:** {val_or_unknown(weather.get('temperature_2m'), '°C')}")
     lines.append(f"- **Feels Like:** {val_or_unknown(weather.get('apparent_temperature'), '°C')}")
     lines.append(f"- **Precipitation:** {val_or_unknown(weather.get('precipitation'), ' mm')}")
+    lines.append(f"- **Precipitation Probability:** {val_or_unknown(weather.get('precipitation_probability'), '%')}")
     lines.append(f"- **Wind Speed:** {val_or_unknown(weather.get('wind_speed_10m'), ' km/h')}")
     if weather.get("wind_gusts_10m") is not None:
         lines.append(f"- **Wind Gusts:** {weather.get('wind_gusts_10m')} km/h")
