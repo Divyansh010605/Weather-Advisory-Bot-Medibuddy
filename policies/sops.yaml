@@ -1,0 +1,313 @@
+# Total SOPs: 12
+
+# Severity counts:
+#   Normal: 3
+#   Moderate: 4
+#   High: 3
+#   Critical: 2
+
+# Categories:
+#   outdoor_commuting_and_cycling
+#   sports_and_recreation
+#   outdoor_work_and_events
+
+sops:
+# Normal
+
+# SOP - 1
+  - id: "SOP-COMMUTE-001"
+    title: "Standard Outdoor Cycling & Commute Protocol"
+    category: "outdoor_commuting_and_cycling"
+    severity: "Normal"
+    priority: 10
+    applicable_activities:
+      - "cycling"
+      - "biking"
+      - "bike"
+      - "cycle"
+      - "commute"
+      - "running"
+      - "jogging"
+      - "walking"
+    required_fields:
+      - "temperature_2m"
+      - "wind_speed_10m"
+      - "precipitation"
+      - "visibility"
+      - "weather_code"
+    conditions:
+      temperature_min: 15.0
+      temperature_max: 32.0
+      wind_speed_max: 25.0
+      precipitation_max: 0.1
+      visibility_min: 4000.0
+      weather_code_in: [0, 1, 2, 3] # Clear, mainly clear, partly cloudy, overcast
+    guidance: "Weather conditions are optimal and safe for cycling and outdoor commuting. Standard road safety precautions and helmet usage are recommended."
+
+# Normal
+  
+# SOP - 2
+  - id: "SOP-REC-001"
+    title: "Pleasant Outdoor Picnic & Leisure Gathering Protocol"
+    category: "sports_and_recreation"
+    severity: "Normal"
+    priority: 10
+    applicable_activities:
+      - "picnic"
+      - "park outing"
+      - "outdoor dining"
+      - "family gathering"
+      - "barbecue"
+      - "sitting outside"
+    required_fields:
+      - "temperature_2m"
+      - "precipitation"
+      - "wind_speed_10m"
+      - "uv_index"
+      - "weather_code"
+    conditions:
+      temperature_min: 17.0
+      temperature_max: 30.0
+      precipitation_max: 0.1
+      wind_speed_max: 20.0
+      uv_index_max: 6.0
+      weather_code_in: [0, 1, 2, 3]
+    guidance: "Favorable, calm, and dry conditions. Excellent weather for an outdoor picnic, blanket seating, and leisure dining."
+
+# Normal
+  
+# SOP - 3
+  - id: "SOP-WORK-001"
+    title: "Optimal Conditions for Outdoor Labor & Staged Events"
+    category: "outdoor_work_and_events"
+    severity: "Normal"
+    priority: 10
+    applicable_activities:
+      - "construction"
+      - "maintenance"
+      - "filming"
+      - "outdoor event"
+      - "festival"
+      - "staging"
+      - "manual work"
+    required_fields:
+      - "temperature_2m"
+      - "wind_speed_10m"
+      - "precipitation"
+      - "weather_code"
+    conditions:
+      temperature_min: 12.0
+      temperature_max: 33.0
+      wind_speed_max: 28.0
+      precipitation_max: 0.1
+      weather_code_in: [0, 1, 2, 3]
+    guidance: "Operational conditions are stable and safe for routine outdoor workforce operations, staging, and scheduled public events."
+
+# Moderate
+
+# SOP - 4
+
+  - id: "SOP-COMMUTE-002"
+    title: "Light Rain & Damp Roadway Advisory for Two-Wheelers"
+    category: "outdoor_commuting_and_cycling"
+    severity: "Moderate"
+    priority: 20
+    applicable_activities:
+      - "cycling"
+      - "biking"
+      - "bike"
+      - "cycle"
+      - "commute"
+      - "running"
+      - "jogging"
+      - "scootering"
+    required_fields:
+      - "precipitation"
+      - "weather_code"
+      - "wind_speed_10m"
+    conditions:
+      precipitation_min: 0.1
+      precipitation_max: 4.0
+      wind_speed_max: 35.0
+      weather_code_in: [51, 53, 55, 61, 80] # Drizzle or light rain
+    guidance: "Roadways may be slick and stopping distance will increase. Use water-resistant apparel, engage active front and rear lights, and reduce cruising speed."
+
+# Moderate
+
+# SOP - 5
+  - id: "SOP-REC-002"
+    title: "High UV Radiation & Afternoon Heat Precautions"
+    category: "sports_and_recreation"
+    severity: "Moderate"
+    priority: 20
+    applicable_activities:
+      - "picnic"
+      - "hiking"
+      - "running"
+      - "outdoor sports"
+      - "tennis"
+      - "football"
+      - "cricket"
+      - "park outing"
+    required_fields:
+      - "uv_index"
+      - "temperature_2m"
+    conditions:
+      uv_index_min: 6.0
+      uv_index_max: 8.5
+      temperature_max: 38.0
+    guidance: "High UV solar radiation risk. Apply broad-spectrum SPF 30+ sunscreen, wear UV-protective headgear and sunglasses, and prioritize shaded spots during peak hours."
+
+# Moderate
+
+# SOP - 6
+  - id: "SOP-WORK-002"
+    title: "Elevated Wind & Drone/Scaffolding Advisory"
+    category: "outdoor_work_and_events"
+    severity: "Moderate"
+    priority: 20
+    applicable_activities:
+      - "drone flying"
+      - "aerial photography"
+      - "construction"
+      - "scaffolding"
+      - "tent setup"
+      - "outdoor event"
+      - "banner hanging"
+    required_fields:
+      - "wind_speed_10m"
+      - "wind_gusts_10m"
+    conditions:
+      wind_speed_min: 30.0
+      wind_speed_max: 48.0
+    guidance: "Moderate to brisk winds. Ground lightweight commercial drones, tether loose tarpaulins or event signage, and exercise caution on elevated ladders or scaffolding."
+
+# Moderate
+
+# SOP - 7
+  - id: "SOP-COMMUTE-003"
+    title: "Restricted Visibility & Dense Fog Transit Advisory"
+    category: "outdoor_commuting_and_cycling"
+    severity: "Moderate"
+    priority: 20
+    applicable_activities:
+      - "cycling"
+      - "biking"
+      - "commute"
+      - "running"
+      - "walking"
+      - "driving"
+    required_fields:
+      - "visibility"
+      - "weather_code"
+    conditions:
+      visibility_min: 300.0
+      visibility_max: 2000.0
+      weather_code_in: [45, 48] # Fog / depositing rime fog
+    guidance: "Visibility is significantly reduced due to fog or mist. High-visibility reflective clothing and active illumination are required for pedestrian and cycle transit."
+
+# High
+
+# SOP - 8
+  - id: "SOP-COMMUTE-004"
+    title: "Heavy Rainfall & Road Waterlogging Alert"
+    category: "outdoor_commuting_and_cycling"
+    severity: "High"
+    priority: 30
+    applicable_activities:
+      - "cycling"
+      - "biking"
+      - "cycle"
+      - "bike"
+      - "commute"
+      - "running"
+      - "scootering"
+    required_fields:
+      - "precipitation"
+      - "weather_code"
+    conditions:
+      precipitation_min: 4.0
+      weather_code_in: [63, 65, 81, 82] # Moderate/heavy rain or heavy showers
+    guidance: "Heavy rainfall creates substantial water accumulation, hydroplaning, and impaired brake grip. Avoid bicycle or two-wheeler travel; utilize public transit or delay the trip."
+# High
+
+# SOP - 9
+  - id: "SOP-WORK-003"
+    title: "Extreme Heat Index & Thermal Strain Warning"
+    category: "outdoor_work_and_events"
+    severity: "High"
+    priority: 30
+    applicable_activities:
+      - "construction"
+      - "manual work"
+      - "outdoor labor"
+      - "running"
+      - "cycling"
+      - "sports"
+      - "hiking"
+    required_fields:
+      - "temperature_2m"
+      - "apparent_temperature"
+    conditions:
+      temperature_min: 38.0
+      apparent_temperature_min: 40.0
+    guidance: "Excessive thermal stress warning. High risk of heat exhaustion and heat cramps during physical exertion. Shift heavy labor to early morning, mandate 15-minute shaded rest hourly, and enforce mandatory electrolyte hydration."
+
+# High
+
+# SOP - 10
+  - id: "SOP-REC-003"
+    title: "Gale-Force Wind Advisory for Outdoor Recreation & Camping"
+    category: "sports_and_recreation"
+    severity: "High"
+    priority: 30
+    applicable_activities:
+      - "picnic"
+      - "camping"
+      - "hiking"
+      - "boating"
+      - "sailing"
+      - "outdoor event"
+    required_fields:
+      - "wind_speed_10m"
+      - "wind_gusts_10m"
+    conditions:
+      wind_speed_min: 48.0
+      wind_gusts_min: 60.0
+    guidance: "Gale-force winds present danger from flying debris, loose gear, and falling tree branches. Cancel recreational picnics, camping, and water sports; seek indoor refuge."
+
+# Critical
+
+# SOP - 11
+  - id: "SOP-SAFETY-001"
+    title: "Severe Thunderstorm & Lightning Hazard Protocol"
+    category: "outdoor_work_and_events"
+    severity: "Critical"
+    priority: 40
+    applicable_activities:
+      - "*" # Wildcard: applies to all outdoor activities
+    required_fields:
+      - "weather_code"
+    conditions:
+      weather_code_in: [95, 96, 99] # Thunderstorm, thunderstorm with hail
+    guidance: "Critical danger from cloud-to-ground lightning strikes, flash downpours, and sudden violent squalls. Immediately suspend all outdoor activities and seek refuge inside an enclosed building or vehicle. Avoid tall trees, open ground, and metal objects."
+
+# Critical
+
+# SOP - 12
+  - id: "SOP-SAFETY-002"
+    title: "Extreme Storm, Destructive Gusts & Flooding Protocol"
+    category: "outdoor_work_and_events"
+    severity: "Critical"
+    priority: 40
+    applicable_activities:
+      - "*" # Wildcard: applies to all outdoor activities
+    required_fields:
+      - "wind_speed_10m"
+      - "wind_gusts_10m"
+      - "precipitation"
+    conditions:
+      wind_speed_min: 65.0
+      wind_gusts_min: 85.0
+      precipitation_min: 25.0
+    guidance: "Destructive weather hazard with severe risk to life and property. Halt all outdoor travel and work immediately. Remain sheltered indoors away from windows until conditions subside."
