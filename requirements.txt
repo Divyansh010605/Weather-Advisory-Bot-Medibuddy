@@ -6,3 +6,4 @@ google-genai
 httpx
 pyyaml
 typing-extensions
+python-dotenv
