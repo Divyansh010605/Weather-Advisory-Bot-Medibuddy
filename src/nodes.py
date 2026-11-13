@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 import random
+import logging
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -27,7 +28,11 @@ from src.responses import (
 )
 from src.state import WeatherBotState
 from src.weather import fetch_weather
+logger = logging.getLogger(__name__)
 
+
+class LLMUnavailableError(Exception):
+    pass
 
 class ExtractedSlots(BaseModel):
     activity: Optional[str] = Field(
@@ -52,6 +57,7 @@ class GeminiResponseError(Exception):
     pass
 
 
+
 def extract_with_gemini(
     message: str,
     history: List[Dict[str, str]]
@@ -60,15 +66,19 @@ def extract_with_gemini(
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        raise GeminiConfigurationError(
-            "Gemini API key is not configured."
-        )
+        raise RuntimeError("Gemini API key is not configured.")
 
     from google import genai
     from google.genai import types
 
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    client = genai.Client(api_key=api_key)
+
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            timeout=15000
+        )
+    )
 
     history_summary = []
 
@@ -77,23 +87,28 @@ def extract_with_gemini(
         content = msg.get("content", "")
         history_summary.append(f"{role.capitalize()}: {content}")
 
-    hist_text = "\n".join(history_summary) if history_summary else "None"
+    hist_text = (
+        "\n".join(history_summary)
+        if history_summary
+        else "None"
+    )
 
     prompt = (
-        "You are an intent and slot extractor for a weather advisory system.\n"
-        "Extract activity, location and time_target.\n"
+        "You are an intent and slot extractor for a weather advisory support system.\n"
+        "Extract three parameters:\n"
+        "1. activity: Canonical outdoor activity or null.\n"
+        "2. location: City or place name or null.\n"
+        "3. time_target: Time period, default to today.\n"
         "Resolve colloquial activity descriptions.\n"
-        "Carry forward the previous location for follow-up questions "
-        "unless the user changes it.\n"
-        "Default time_target to today if unspecified.\n"
-        "Return only the requested structured fields.\n\n"
+        "Carry forward previous activity and location for follow-up questions "
+        "unless the user changes them.\n\n"
         f"Conversation History:\n{hist_text}\n\n"
         f"Current User Message: {message}"
     )
 
     last_error = None
 
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             response = client.models.generate_content(
                 model=model_name,
@@ -108,20 +123,19 @@ def extract_with_gemini(
             raw_text = (response.text or "").strip()
 
             if not raw_text:
-                raise GeminiResponseError(
-                    "Gemini returned an empty response."
-                )
+                raise ValueError("Gemini returned an empty response.")
 
             data = json.loads(raw_text)
 
-            return {
+            slots = ExtractedSlots.model_validate({
                 "activity": data.get("activity"),
                 "location": data.get("location"),
                 "time_target": data.get("time_target") or "today",
-            }
+            })
 
-        except GeminiResponseError:
-            raise
+            logger.info("Gemini extraction successful")
+
+            return slots.model_dump()
 
         except Exception as exc:
             last_error = exc
@@ -142,19 +156,104 @@ def extract_with_gemini(
             )
 
             if not retryable:
-                raise GeminiResponseError(
-                    "Gemini request failed. Check model availability "
-                    "and API configuration."
-                ) from exc
+                raise
 
-            if attempt < 2:
-                delay = (2 ** (attempt + 1)) + random.uniform(0, 1)
+            if attempt == 0:
+                delay = 1.5 + random.uniform(0, 0.5)
+
+                logger.warning(
+                    "Gemini temporary failure. Retrying in %.2f seconds.",
+                    delay,
+                )
+
                 time.sleep(delay)
 
-    raise GeminiUnavailableError(
-        "Gemini is temporarily experiencing high demand. "
-        "Please try again in a few moments."
+    logger.warning(
+        "Gemini failed after 2 attempts. Groq fallback will be attempted."
+    )
+
+    raise RuntimeError(
+        "Gemini is temporarily unavailable."
     ) from last_error
+
+
+def extract_with_groq(
+    message: str,
+    history: List[Dict[str, str]]
+) -> Dict[str, Optional[str]]:
+
+    api_key = os.getenv("GROQ_API_KEY")
+
+    if not api_key:
+        raise LLMUnavailableError("Groq API key is not configured.")
+
+    from groq import Groq
+
+    model_name = os.getenv(
+        "GROQ_MODEL",
+        "llama-3.3-70b-versatile"
+    )
+
+    client = Groq(
+        api_key=api_key,
+        timeout=20.0,
+        max_retries=1,
+    )
+
+    history_summary = []
+
+    for msg in history[-6:]:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        history_summary.append(f"{role.capitalize()}: {content}")
+
+    hist_text = "\n".join(history_summary) if history_summary else "None"
+
+    prompt = (
+        "You are an intent and slot extractor for a weather advisory system.\n"
+        "Extract exactly three fields: activity, location, time_target.\n"
+        "Resolve colloquial descriptions into canonical outdoor activities.\n"
+        "For follow-up messages, carry forward the previous activity and "
+        "location when the user has not changed them.\n"
+        "Use null when a field cannot be determined.\n"
+        "Use today as the default time_target if no timeframe is specified.\n\n"
+        "Return a JSON object with exactly these keys:\n"
+        '{"activity": null, "location": null, "time_target": "today"}\n\n'
+        f"Conversation History:\n{hist_text}\n\n"
+        f"Current User Message: {message}"
+    )
+
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Extract weather activity intent. "
+                    "Return only valid JSON with activity, location "
+                    "and time_target keys."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+        max_tokens=250,
+    )
+
+    raw_text = response.choices[0].message.content or "{}"
+    data = json.loads(raw_text)
+
+    slots = ExtractedSlots.model_validate({
+        "activity": data.get("activity"),
+        "location": data.get("location"),
+        "time_target": data.get("time_target") or "today",
+    })
+
+    return slots.model_dump()
 
 
 def parse_request_node(state: WeatherBotState) -> Dict[str, Any]:
@@ -162,7 +261,7 @@ def parse_request_node(state: WeatherBotState) -> Dict[str, Any]:
     history = state.get("history", [])
 
     try:
-        extracted = extract_with_gemini(user_msg, history)
+        extracted = extract_with_fallback(user_msg, history)
 
         return {
             "extracted_activity": extracted.get("activity"),
@@ -171,25 +270,9 @@ def parse_request_node(state: WeatherBotState) -> Dict[str, Any]:
             "parse_error": None,
         }
 
-    except GeminiUnavailableError as exc:
+    except LLMUnavailableError as exc:
         return {
             "parse_error": str(exc),
-        }
-
-    except GeminiConfigurationError:
-        return {
-            "parse_error": (
-                "The AI service is not configured correctly. "
-                "Please contact the administrator."
-            ),
-        }
-
-    except GeminiResponseError:
-        return {
-            "parse_error": (
-                "The AI service could not understand the request. "
-                "Please try rephrasing your question."
-            ),
         }
 
 def parse_failure_node(state: WeatherBotState) -> Dict[str, Any]:
@@ -202,6 +285,51 @@ def parse_failure_node(state: WeatherBotState) -> Dict[str, Any]:
         "sop_citation": None,
         "relevant_weather": None,
     }
+
+def extract_with_fallback(
+    message: str,
+    history: List[Dict[str, str]]
+) -> Dict[str, Optional[str]]:
+
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+
+    if gemini_key:
+        try:
+            logger.info("Attempting intent extraction with Gemini")
+
+            result = extract_with_gemini(message, history)
+
+            logger.info("Gemini intent extraction successful")
+            return result
+
+        except Exception as exc:
+            logger.warning(
+                "Gemini failed. Switching to Groq. Error type: %s",
+                type(exc).__name__,
+            )
+    else:
+        logger.warning("Gemini key missing. Switching directly to Groq.")
+
+    if groq_key:
+        try:
+            logger.info("Attempting intent extraction with Groq")
+
+            result = extract_with_groq(message, history)
+
+            logger.info("Groq fallback successful")
+            return result
+
+        except Exception as exc:
+            logger.exception(
+                "Groq fallback also failed. Error type: %s",
+                type(exc).__name__,
+            )
+
+    raise LLMUnavailableError(
+        "Both AI providers are currently unavailable. "
+        "Please try again in a few moments."
+    )
 
 def resolve_location_node(state: WeatherBotState) -> Dict[str, Any]:
     query = state.get("extracted_location")

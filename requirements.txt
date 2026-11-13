@@ -7,3 +7,4 @@ httpx
 pyyaml
 typing-extensions
 python-dotenv
+groq
