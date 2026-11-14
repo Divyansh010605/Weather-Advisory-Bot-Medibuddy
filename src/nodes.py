@@ -71,7 +71,7 @@ def extract_with_gemini(
     from google import genai
     from google.genai import types
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
     client = genai.Client(
         api_key=api_key,
@@ -140,6 +140,9 @@ def extract_with_gemini(
         except Exception as exc:
             last_error = exc
             err_str = str(exc).upper()
+
+            if "RESOURCE_EXHAUSTED" in err_str and "PER DAY" in err_str:
+                break
 
             retryable = any(
                 marker in err_str
@@ -260,7 +263,7 @@ def extract_with_groq(
             ],
             response_format={"type": "json_object"},
             temperature=0,
-            max_tokens=250,
+            max_tokens=2000,
         )
 
         logger.info("Groq response received")

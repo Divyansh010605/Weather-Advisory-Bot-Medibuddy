@@ -90,7 +90,7 @@ def _generate_natural_guidance(
                 return text
         except Exception as exc:
             err_str = str(exc)
-            if ("429" in err_str or "503" in err_str or "RESOURCE_EXHAUSTED" in err_str) and attempt < 2:
+            if ("429" in err_str or "503" in err_str or "RESOURCE_EXHAUSTED" in err_str) and "PER DAY" not in err_str.upper() and attempt < 2:
                 time.sleep(3.0 * (attempt + 1))
                 continue
             break
