@@ -51,11 +51,11 @@ def get_cached_sops(sops_path: Optional[Path] = None) -> List[Dict[str, Any]]:
 
 
 def _matches_activity(user_activity: Optional[str], applicable_activities: List[str]) -> Tuple[bool, bool]:
-    if "*" in applicable_activities:
-        return True, False
-
     if not user_activity:
         return False, False
+
+    if "*" in applicable_activities:
+        return True, False
 
     user_act = user_activity.lower().strip()
     for act in applicable_activities:

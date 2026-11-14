@@ -168,9 +168,7 @@ def extract_with_gemini(
 
                 time.sleep(delay)
 
-    logger.warning(
-        "Gemini failed after 2 attempts. Groq fallback will be attempted."
-    )
+    logger.warning("Gemini failed after 2 attempts: %r", last_error)
 
     raise RuntimeError(
         "Gemini is temporarily unavailable."

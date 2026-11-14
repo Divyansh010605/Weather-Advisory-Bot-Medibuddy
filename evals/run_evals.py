@@ -244,7 +244,7 @@ def run_single_case(case: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
     }
 
     with (
-        patch("src.nodes.extract_with_gemini", side_effect=_simulated_gemini_extract),
+        patch("src.nodes.extract_with_fallback", side_effect=_simulated_gemini_extract),
         patch("src.nodes.resolve_location", side_effect=_mock_location),
         patch("src.nodes.fetch_weather", side_effect=lambda lat, lon, time_target=None: _mock_weather_for(case["id"])),
     ):
